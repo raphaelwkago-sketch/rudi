@@ -82,26 +82,28 @@ You'll watch the input-token curve stay flat while a naive transcript would ball
 
 ---
 
-## Use it as a service
+## Use it in code
 
 Two calls per turn. You keep your own model key; Rudi only manages the graph.
 
 ```python
-import httpx
+import rudi
 
 # 1 — before your LLM call: fetch the relevant slice
-slice = httpx.post("http://localhost:5000/slice",
-    headers={"X-API-Key": "rudi_sk_..."},
-    json={"task": user_message}).json()
-#   → inject slice["system"] + slice["prompt"] into YOUR LLM call
+s = rudi.get_slice(task)
+#   → feed s["system"] + s["prompt"] into YOUR LLM call
 
 # 2 — after your LLM call: store what was decided
-httpx.post("http://localhost:5000/decisions",
-    headers={"X-API-Key": "rudi_sk_..."},
-    json={"decisions": decisions, "inject_ids": slice["inject_ids"]})
+rudi.store_decisions(decisions, inject_ids=s["inject_ids"])
 ```
 
-Storage is Postgres (Supabase), one row per node, fully isolated per project.
+Or let Rudi drive the whole turn (LLM call + store + fold) in one shot:
+
+```python
+result = rudi.run_turn(task)   # → {"display", "tokens_in", "tokens_out", ...}
+```
+
+Storage is local SQLite (`store.py`) — one row per decision node. No server, no cloud, no setup.
 
 ---
 

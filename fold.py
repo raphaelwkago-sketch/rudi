@@ -4,7 +4,7 @@ fold.py — compresses reachability-dead branches into Stubs.
 
 import sys, re
 from anthropic import Anthropic
-import store_supabase as store
+import store
 
 client = Anthropic()
 WORKER = "claude-sonnet-4-6"
@@ -20,8 +20,8 @@ Preserve:
 
 Output ONLY the text of the stub. Do not output anything else."""
 
-def run_fold(project_id: str):
-    clusters = store.get_dead_clusters(project_id)
+def run_fold():
+    clusters = store.get_dead_clusters()
     if not clusters:
         print("[fold] No reachability-dead clusters found.")
         return []
@@ -38,7 +38,7 @@ def run_fold(project_id: str):
         if len(cluster_ids) < 3:
             continue
 
-        if store.has_fold_failed(project_id, cluster_ids):
+        if store.has_fold_failed(cluster_ids):
             print(f"[fold] Skipping cluster (previously failed size guard): {cluster_ids}")
             continue
 
@@ -57,10 +57,10 @@ def run_fold(project_id: str):
         orig_len = sum(len(t) for t in cluster_texts)
         if len(stub_text) >= orig_len * 0.9:
             print(f"[fold] Size guard triggered. Stub ({len(stub_text)} chars) not significantly smaller than original ({orig_len} chars). Skipping.")
-            store.mark_fold_failed(project_id, cluster_ids)
+            store.mark_fold_failed(cluster_ids)
             continue
 
-        sid = store.fold_nodes(project_id, cluster_ids, stub_text, hard_rules=cluster_hard_rules)
+        sid = store.fold_nodes(cluster_ids, stub_text, hard_rules=cluster_hard_rules)
         print(f"[fold] Successfully folded {len(cluster_ids)} nodes into {sid}.")
         events.append({"stub": sid, "folded_ids": cluster_ids})
 

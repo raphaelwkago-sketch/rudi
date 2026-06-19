@@ -1,18 +1,16 @@
 """
 rudi.py — context-map turn loop + product API functions.
 
-Product API (for graph-as-a-service customers):
-  get_slice(task, project_id)          → context to inject before your LLM call
-  store_decisions(decisions, project_id, inject_ids) → store + fold after your LLM call
-
-Internal (for local testing / the /api/chat endpoint):
-  run_turn(task, project_id)           → full LLM call + store in one shot
+API:
+  get_slice(task)                      → context to inject before your LLM call
+  store_decisions(decisions, inject_ids) → store + fold after your LLM call
+  run_turn(task)                       → full LLM call + store in one shot
 """
 
 import sys, re, json
 sys.stdout.reconfigure(encoding="utf-8")
 from anthropic import Anthropic
-import store_supabase as store
+import store
 import fold
 
 client = Anthropic()
@@ -58,7 +56,7 @@ def _json_block(text, key):
     return obj[key]
 
 
-def librarian_select(project_id: str, task: str, active_nodes: list) -> set:
+def librarian_select(task: str, active_nodes: list) -> set:
     ctx = "\n".join(f"{n['id']}: {n['text']}" for n in active_nodes)
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001", max_tokens=200,
@@ -67,11 +65,11 @@ def librarian_select(project_id: str, task: str, active_nodes: list) -> set:
     )
     raw = resp.content[0].text
     seeds = [x.strip() for x in raw.replace(",", " ").split() if x.strip() in [n['id'] for n in active_nodes]]
-    return store.reachable(project_id, seeds, cross_stubs=False)
+    return store.reachable(seeds, cross_stubs=False)
 
 
-def folded_territory_stubs(project_id: str, task: str) -> set:
-    nodes = store.all_nodes(project_id)
+def folded_territory_stubs(task: str) -> set:
+    nodes = store.all_nodes()
     folded = [n for n in nodes.values() if n["status"] == "folded"]
     task_words = set(w for w in re.findall(r'\w+', task.lower()) if len(w) > 3)
     intersecting_folded = []
@@ -89,7 +87,7 @@ def folded_territory_stubs(project_id: str, task: str) -> set:
 
 # ── product API ───────────────────────────────────────────────────────────────
 
-def get_slice(task: str, project_id: str) -> dict:
+def get_slice(task: str) -> dict:
     """Return the context slice for a task. Call this BEFORE your LLM API call.
 
     Returns:
@@ -101,7 +99,7 @@ def get_slice(task: str, project_id: str) -> dict:
       mode        — "A" (all nodes) or "B" (retrieval fallback, >80 nodes)
       active_before — total active node count before this slice
     """
-    nodes = store.all_nodes(project_id)
+    nodes = store.all_nodes()
     active_nodes = [n for n in nodes.values() if n["status"] != "folded"]
     active_nodes.sort(
         key=lambda n: n.get("last_activated", n.get("turn", 0)) + n.get("reinforcement_count", 0) * 5,
@@ -113,10 +111,10 @@ def get_slice(task: str, project_id: str) -> dict:
         inject_ids = {n["id"] for n in active_nodes}
         mode = "A"
     else:
-        inject_ids = librarian_select(project_id, task, active_nodes) | set(store.pinned_ids(project_id))
+        inject_ids = librarian_select(task, active_nodes) | set(store.pinned_ids())
         mode = "B"
 
-    stubs_to_flag = folded_territory_stubs(project_id, task)
+    stubs_to_flag = folded_territory_stubs(task)
     inject_ids.update(stubs_to_flag)
 
     if not inject_ids:
@@ -133,7 +131,7 @@ def get_slice(task: str, project_id: str) -> dict:
             ctx_lines.append(line)
         ctx = "\n".join(ctx_lines)
 
-    turn = store.get_turn(project_id)
+    turn = store.get_turn()
     existing = ", ".join(sorted(inject_ids, key=lambda x: int(x[1:]))) or "(none)"
     prompt = f"MAP OF PRIOR DECISIONS:\n{ctx}\n\n[existing ids: {existing}]\n\nTASK: {task}"
 
@@ -148,12 +146,11 @@ def get_slice(task: str, project_id: str) -> dict:
     }
 
 
-def store_decisions(decisions: list, project_id: str, inject_ids: list | None = None) -> dict:
+def store_decisions(decisions: list, inject_ids: list | None = None) -> dict:
     """Store decisions from your LLM response and run fold. Call this AFTER your LLM call.
 
     Args:
       decisions   — list of decision dicts from the LLM JSON block
-      project_id  — your project identifier (from X-API-Key hash)
       inject_ids  — the inject_ids returned by get_slice (for reinforcement tracking)
 
     Returns:
@@ -162,12 +159,12 @@ def store_decisions(decisions: list, project_id: str, inject_ids: list | None = 
       fold_events — list of fold events (stubs created)
       total_nodes — total node count after this turn
     """
-    turn = store.get_turn(project_id) + 1
+    turn = store.get_turn() + 1
     inject_ids = inject_ids or []
 
     added = []
     if decisions:
-        store.add_nodes_transactional(project_id, decisions, turn)
+        store.add_nodes_transactional(decisions, turn)
         for d in decisions:
             if d.get("id"):
                 added.append(d["id"] + (" (revises)" if d.get("revises") else ""))
@@ -180,32 +177,32 @@ def store_decisions(decisions: list, project_id: str, inject_ids: list | None = 
             if d.get("exception_to"): deps.add(d["exception_to"])
         deps_list = list(deps)
         if deps_list:
-            store.reinforce_nodes(project_id, deps_list, turn,
+            store.reinforce_nodes(deps_list, turn,
                                   f"Cited by {len(decisions)} new decision(s)", is_durable=True)
         other_active = [nid for nid in inject_ids if nid not in set(deps_list)]
         if other_active:
-            store.reinforce_nodes(project_id, other_active, turn,
+            store.reinforce_nodes(other_active, turn,
                                   "Active context during decision", is_durable=False)
     elif inject_ids:
-        store.reinforce_nodes(project_id, inject_ids, turn, "Context during Q&A", is_durable=False)
+        store.reinforce_nodes(inject_ids, turn, "Context during Q&A", is_durable=False)
 
-    store.set_turn(project_id, turn)
-    store.pin_foundations(project_id)
+    store.set_turn(turn)
+    store.pin_foundations()
 
-    fold_events = fold.run_fold(project_id)
+    fold_events = fold.run_fold()
 
     return {
         "added":       added,
         "turn":        turn,
         "fold_events": fold_events,
-        "total_nodes": len(store.all_nodes(project_id)),
+        "total_nodes": len(store.all_nodes()),
     }
 
 
 # ── internal: full LLM turn (used by /api/chat for local testing) ─────────────
 
-def run_turn(task: str, project_id: str) -> dict:
-    slice_data = get_slice(task, project_id)
+def run_turn(task: str) -> dict:
+    slice_data = get_slice(task)
     print(f"\n[Mode {slice_data['mode']}: injecting {len(slice_data['inject_ids'])} nodes, "
           f"active_before={slice_data['active_before']}]")
 
@@ -230,7 +227,7 @@ def run_turn(task: str, project_id: str) -> dict:
     print("\n" + "=" * 80 + "\n" + out + "\n" + "=" * 80)
 
     decs = _json_block(out, "decisions")
-    result = store_decisions(decs, project_id, inject_ids=slice_data["inject_ids"])
+    result = store_decisions(decs, inject_ids=slice_data["inject_ids"])
     print(f"\n[map updated: +{len(result['added'])} node(s): {result['added'] or '—'}]  "
           f"total nodes: {result['total_nodes']}")
 
