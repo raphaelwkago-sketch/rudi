@@ -141,8 +141,5 @@ No vapor. The table is what the logs say; the in-progress rows are labeled as su
 
 **AGPL-3.0.** Free for personal use, research, and self-hosting. If you run a modified version as a network service, you must release your source under the same license. Contributions are accepted under a CLA so the project can offer commercial licensing later.
 
-Want to use Rudi commercially without AGPL obligations? Open an issue or email **caregiving886@gmail.com**.
+Want to use Rudi commercially without AGPL obligations? Open an issue or email **raphaelwkago@gmail.com**.
 
----
-
-*Built solo in Nairobi. A full morning of architectural reasoning, mapped and recalled, for under a dollar.*
