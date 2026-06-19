@@ -139,7 +139,9 @@ No vapor. The table is what the logs say; the in-progress rows are labeled as su
 
 ## License
 
-**AGPL-3.0.** Free for personal use, research, and self-hosting. If you run a modified version as a network service, you must release your source under the same license. Contributions are accepted under a CLA so the project can offer commercial licensing later.
+**Business Source License 1.1.** Free for personal use, research, development, and self-hosting. Commercial SaaS or managed hosting use requires a paid license from the maintainer.
+
+Want a commercial license? Open an issue or email **raphaelwkago@gmail.com**.
 
 Want to use Rudi commercially without AGPL obligations? Open an issue or email **raphaelwkago@gmail.com**.
 
