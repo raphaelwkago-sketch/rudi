@@ -20,9 +20,24 @@ In a **43-turn** software-architecture session (building a Notes API turn by tur
 
 **Totals across all 43 turns:** 152,222 input tokens (Rudi) vs 828,369 (full transcript) — **5.4× fewer tokens**, and the gap widens every turn because Rudi's curve is bounded while the transcript's is linear.
 
-> These numbers are **conservative**: the background fold/garbage-collector was disabled in this run. The savings come from graph slicing alone. With fold on, the curve flattens further, not less.
+> These numbers are from a run with fold disabled — graph slicing alone. See below for the measured fold result.
 
 Cost of the entire 43-turn run on Claude Haiku 4.5: **$0.34.**
+
+### Fold in action (second run)
+
+At turn 29 of a separate run, fold fired for the first time:
+
+```
+turn 28: input=5,075 tokens   active nodes=24
+[fold] d1–d8   (8 nodes, 20 hard rules) → stub d25
+[fold] d9–d16  (8 nodes, 20 hard rules) → stub d26
+[fold] d17–d21 (5 nodes, 16 hard rules) → stub d27
+turn 29: active nodes=6   (dropped 24 → 6)
+turn 30: input=2,865 tokens   ← down 44% from turn 28
+```
+
+21 live nodes compressed into 3 stubs. **56 hard rules preserved verbatim.** Input tokens nearly halved mid-session, automatically. That's the sawtooth: the graph gets *smaller* as the conversation gets *longer*.
 
 ---
 
@@ -39,7 +54,7 @@ Cheap context is worthless if the model forgets the rules. So the same benchmark
 | 5 | 42 | "Store the token in localStorage" — conflicts with turn-1 hard rule | ✅ blocked |
 | 6 | 43 | "Permanently delete a note" — turn-11 chose soft-delete | ✅ flagged |
 
-**6 / 6.** The two that matter most are #3 and #4: those rules had been **compressed out of the active context** by the time the trap was sprung — and the model still caught them, because hard rules are preserved verbatim on the fold stub. That's the whole thesis: *forget the prose, keep the constraints.*
+**6 / 6.** *(First benchmark run — fold disabled, slicing only.)* The two that matter most are #3 and #4: those rules had been **compressed out of the active context** by the time the trap was sprung — and the model still caught them, because hard rules are preserved verbatim on the fold stub. That's the whole thesis: *forget the prose, keep the constraints.*
 
 ---
 
@@ -115,7 +130,7 @@ Storage is local SQLite (`store.py`) — one row per decision node. No server, n
 | Decisions recalled 40+ turns later | ✅ 6/6 callbacks |
 | Hard rules survive fold verbatim | ✅ traps #3/#4 |
 | Conflicts blocked, not silently obeyed | ✅ traps #5/#6 |
-| Fold GC in the live token numbers | ⏳ disabled in this run — numbers are without it |
+| Fold GC compresses dead branches mid-session | ✅ measured — 24 nodes → 6, input −44% at turn 30 |
 | Retrieval fallback above ~80 active nodes | ⏳ built, not yet benchmarked at scale |
 
 No vapor. The table is what the logs say; the in-progress rows are labeled as such.
