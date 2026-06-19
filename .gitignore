@@ -1,0 +1,33 @@
+# ── secrets / env ──────────────────────────────
+.env
+.env.*
+*.key
+secrets.*
+
+# ── local data / db ────────────────────────────
+rudi.db
+*.sqlite
+*.sqlite3
+
+# ── benchmark run logs (large, regenerated) ────
+benchmark_run_output.txt
+
+# ── python ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ── os / editor ────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ── archive (internal dev scratch) ─────────────
+archive/
+
+# ── internal handoff doc (contains project refs) ──
+RUDI_MASTER.md
